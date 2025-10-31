@@ -21,6 +21,11 @@
     - Debounced window resize handler
     - Wrapping setup in DOMContentLoaded
     - Feature detection gates for Safari-only gesture events before adding listeners
+
+    KNOWN LIMITATIONS:
+    - Browser DevTools touch emulation does not trigger OS-level touch behavior, so the 
+      on-screen keyboard will not appear when tapping input fields in device mode. Test 
+      on actual touch devices to verify keyboard interaction.
 -->
 <html lang="en">
 <head>
@@ -438,18 +443,22 @@
         
         const getPointerInfo = (e) => `(${e.pointerType}) at ${formatCoords(e.clientX, e.clientY)}`;
         
+        const activePointers = new Set();
+        
         registerEvent('pointer', 'pointerdown', (e) => {
+            activePointers.add(e.pointerId);
             drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.DOWN);
             logEvent(`POINTER: pointerdown ${getPointerInfo(e)}`);
         });
         
         registerEvent('pointer', 'pointerup', (e) => {
+            activePointers.delete(e.pointerId);
             drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.UP);
             logEvent(`POINTER: pointerup ${getPointerInfo(e)}`);
         });
         
         registerEvent('pointer', 'pointermove', (e) => {
-            if (e.buttons > 0) {
+            if (activePointers.has(e.pointerId)) {
                 drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.MOVE);
                 logEvent(`POINTER: pointermove ${getPointerInfo(e)}`);
             }
