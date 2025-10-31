@@ -6,10 +6,21 @@
     - How different event types fire 
     - The differences between event bubbling behavior (over/out vs enter/leave)
     - The redundancy between legacy (mouse/touch) and modern (pointer) event APIs
-    - Browser-specific gesture detection methods (Safari native vs cross-browser)
+    - Browser-specific gesture detection methods (Safari native only)
     - Deprecated event types that should be avoided in modern development
+    - shows errors instead of writing to the console
 
     Users can toggle each event type on/off.
+
+    DECLINED PROPOSALS (intentionally not implemented for this demo):
+    - Accessibility
+    - Modal focus trapping and Escape-to-close behavior
+    - Canvas HiDPI devicePixelRatio scaling
+    - Defaulting one event family off (e.g., touch off with pointer on) 
+    - Event log performance tweaks (batching, throttling, max line cap) and font size change
+    - Debounced window resize handler
+    - Wrapping setup in DOMContentLoaded
+    - Feature detection gates for Safari-only gesture events before adding listeners
 -->
 <html lang="en">
 <head>
@@ -17,78 +28,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mouse vs Touch Events</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font: Arial, sans-serif; background: #000; color: #fff; overflow: hidden; }
+        #canvas { position: fixed; inset: 0; }
         
-        body {
-            font-family: Arial, sans-serif;
-            background: black;
-            color: white;
-            overflow: hidden;
-        }
-        
-        #canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-        
-        #info {
+        #info, #eventLog {
             position: fixed;
             top: 10px;
-            right: 10px;
             background: rgba(0, 0, 0, 0.9);
             padding: 15px;
             border-radius: 8px;
-            font-size: 12px;
-            max-width: 300px;
             z-index: 1000;
         }
+        #info { right: 10px; font-size: 12px; max-width: 300px; }
+        #info p { margin-top: 10px; font-size: 11px; }
+        #info button { margin-top: 10px; padding: 5px 10px; cursor: pointer; }
         
         #eventLog {
-            position: fixed;
-            top: 10px;
             left: 10px;
-            background: rgba(0, 0, 0, 0.9);
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 8px;
+            font: 8px 'Courier New', monospace;
+            color: lime;
             width: 700px;
             height: 400px;
             overflow-y: auto;
-            z-index: 1000;
-            font-family: 'Courier New', monospace;
-            color: lime;
         }
+        #eventLog::-webkit-scrollbar { width: 8px; }
+        #eventLog::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        #eventLog::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 4px; }
 
-        .redundant {
-            color: orange !important;
-            font-style: italic;
-        }
-
-        .deprecated {
-            color: red !important;
-            text-decoration: line-through;
-        }
-        
-        #eventLog::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        #eventLog::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-        }
-        
-        #eventLog::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.3);
-            border-radius: 4px;
-        }
+        .redundant { color: orange !important; font-style: italic; }
+        .deprecated { color: #c00 !important; text-decoration: line-through; }
+        .error { color: red !important; font-weight: bold; }
         
         .event-type {
             margin: 5px 0;
@@ -96,112 +66,58 @@
             border-radius: 3px;
             display: inline-block;
             cursor: pointer;
-            -webkit-user-select: none;
             user-select: none;
             transition: opacity 0.2s;
         }
-
-        .mouse { background: red; color: white; }
-        .touch { background: lime; color: black; }
-        .pointer { background: blue; color: white; }
-        .click { background: magenta; color: white; }
-        .gesture { background: yellow; color: black; }
-
-        .event-type:hover {
-            opacity: 0.8;
-        }
-
-        .event-type.disabled {
-            text-decoration: line-through;
-            opacity: 0.5;
-        }
-        
-        #info p {
-            margin-top: 10px;
-            font-size: 11px;
-        }
-        
-        #info button {
-            margin-top: 10px;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
+        .event-type:hover { opacity: 0.8; }
+        .event-type.disabled { text-decoration: line-through; opacity: 0.5; }
+        .mouse { background: red; color: #fff; }
+        .touch { background: lime; color: #000; }
+        .pointer { background: blue; color: #fff; }
+        .click { background: magenta; color: #fff; }
+        .gesture { background: yellow; color: #000; }
 
         #guideModal {
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             background: rgba(0, 0, 0, 0.8);
             z-index: 2000;
             justify-content: center;
             align-items: center;
         }
-
-        #guideModal.show {
-            display: flex;
-        }
+        #guideModal.show { display: flex; }
 
         #guideContent {
-            background: black;
-            border: 2px solid white;
+            background: #000;
+            border: 2px solid #fff;
             border-radius: 10px;
             padding: 30px;
             max-width: 700px;
             max-height: 80vh;
             overflow-y: auto;
-            font-family: 'Courier New', monospace;
+            font: 14px/1.6 'Courier New', monospace;
             color: lime;
-            font-size: 14px;
-            line-height: 1.6;
         }
-
-        #guideContent h2 {
-            color: white;
-            margin-top: 0;
-            margin-bottom: 20px;
-        }
-
-        #guideContent .section {
-            margin-bottom: 20px;
-        }
-
-        #guideContent .section-title {
-            color: yellow;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-
-        #guideContent .redundant-example {
-            color: orange;
-        }
-
-        #guideContent .deprecated-example {
-            color: red;
-            text-decoration: line-through;
-        }
-
-        #guideContent .subsection-spacing {
-            margin-top: 10px;
-        }
+        #guideContent h2 { color: #fff; margin: 0 0 20px; }
+        #guideContent .section { margin-bottom: 20px; }
+        #guideContent .section-title { color: yellow; font-weight: bold; margin-bottom: 10px; }
+        #guideContent .redundant-example { color: orange; }
+        #guideContent .deprecated-example { color: #c00; text-decoration: line-through; }
+        #guideContent .subsection-spacing { margin-top: 10px; }
 
         #closeGuide {
             display: block;
             margin: 20px auto 0;
             padding: 10px 20px;
-            background: white;
-            color: black;
+            background: #fff;
+            color: #000;
             border: none;
             border-radius: 5px;
             cursor: pointer;
             font-weight: bold;
         }
-
-        #closeGuide:hover {
-            background: lime;
-        }
+        #closeGuide:hover { background: lime; }
     </style>
 </head>
 <body>
@@ -267,11 +183,9 @@
             </div>
 
             <div class="section">
-                <div class="section-title">5. GESTURE detection (2 methods)</div>
+                <div class="section-title">5. GESTURE detection</div>
                 <div>• Native gesturestart/change/end (Safari/iOS only, non-standard)</div>
-                <div>• Custom touch-based detection (cross-browser fallback)</div>
-                <div>• <span class="redundant-example">Both methods</span> try to detect pinch/zoom/rotate</div>
-                <div>• On Safari, both will fire for the same gesture</div>
+                <div>• Browser-provided gesture events (not available in all browsers)</div>
             </div>
 
             <div class="section">
@@ -294,22 +208,31 @@
     </div>
 
     <script>
-        const canvas = document.getElementById('canvas');
-        if (!canvas) {
-            throw new Error('Canvas element not found');
+        let canvas, ctx, eventLog;
+
+        function displayError(message) {
+            const el = document.getElementById('eventLog');
+            if (el) {
+                const span = document.createElement('span');
+                span.className = 'error';
+                span.textContent = `[${new Date().toLocaleTimeString()}] ${message}\n`;
+                el.appendChild(span);
+                el.scrollTop = el.scrollHeight;
+            } else {
+                console.error(message);
+            }
         }
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to get 2D context from canvas');
-        }
+        window.addEventListener('error', (e) => displayError(`Error: ${e.message}`));
+        window.addEventListener('unhandledrejection', (e) => displayError(`Promise rejected: ${e.reason}`));
 
-        const eventLog = document.getElementById('eventLog');
-        if (!eventLog) {
-            throw new Error('Event log element not found');
-        }
+        canvas = document.getElementById('canvas');
+        if (!canvas) throw new Error('Canvas element not found');
+        ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Failed to get 2D context');
+        eventLog = document.getElementById('eventLog');
+        if (!eventLog) throw new Error('Event log element not found');
 
-        // Event type toggle state
         const eventTypeEnabled = {
             mouse: true,
             touch: true,
@@ -318,9 +241,8 @@
             gesture: true
         };
 
-        // Setup event type toggles
         document.querySelectorAll('.event-type').forEach(label => {
-            label.addEventListener('click', (e) => {
+            label.addEventListener('click', () => {
                 const eventType = label.getAttribute('data-event-type');
                 if (eventType) {
                     eventTypeEnabled[eventType] = !eventTypeEnabled[eventType];
@@ -330,24 +252,17 @@
             });
         });
 
-        // Check if event type is enabled
         function isEventTypeEnabled(eventType) {
             return eventTypeEnabled[eventType];
         }
 
-        // Set canvas size
         function resizeCanvas() {
-            try {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-            } catch (error) {
-                logEvent(`ERROR: Failed to resize canvas - ${error.message}`);
-            }
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
         }
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
         
-        // Event colors - High contrast named colors
         const colors = {
             mouse: 'red',
             touch: 'lime',
@@ -356,361 +271,241 @@
             gesture: 'yellow'
         };
 
-        // Circle sizes for different event types
-        const CIRCLE_SIZES = {
-            MOUSE_DOWN: 25,
-            MOUSE_MOVE: 15,
-            MOUSE_WHEEL: 18,
-            TOUCH_DOWN: 28,
-            TOUCH_MOVE: 12,
-            POINTER_DOWN: 23,
-            POINTER_MOVE: 10,
+        // Type determines size (all shapes are circles)
+        const TYPE_SIZES = {
+            DOWN: 25,
+            UP: 20,
+            MOVE: 15,
+            WHEEL: 18,
             CLICK: 20,
             AUX_CLICK: 22,
             DOUBLE_CLICK: 35,
             CONTEXT_MENU: 40,
             GESTURE: 45
         };
+
+        const DRAWING_CONSTANTS = {
+            CIRCLE_ALPHA: 0.7,
+            FULL_ALPHA: 1.0,
+            FULL_CIRCLE_RADIANS: Math.PI * 2
+        };
         
-        // Log events to the pre element
+        const formatCoords = (x, y) => `(${x.toFixed(1)}, ${y.toFixed(1)})`;
+        
         function logEvent(message, type = 'normal') {
-            try {
-                const timestamp = new Date().toLocaleTimeString();
-                const span = document.createElement('span');
-                if (type === 'redundant') {
-                    span.className = 'redundant';
-                    message += ' [REDUNDANT]';
-                } else if (type === 'deprecated') {
-                    span.className = 'deprecated';
-                    message += ' [DEPRECATED]';
-                }
-                span.textContent = `[${timestamp}] ${message}\n`;
-                eventLog.appendChild(span);
-                eventLog.scrollTop = eventLog.scrollHeight;
-            } catch (error) {
-                console.error('Failed to log event:', error);
-            }
+            const timestamp = new Date().toLocaleTimeString();
+            const span = document.createElement('span');
+            const typeClasses = {
+                redundant: () => { span.className = 'redundant'; return message + ' [REDUNDANT]'; },
+                deprecated: () => { span.className = 'deprecated'; return message + ' [DEPRECATED]'; },
+                error: () => { span.className = 'error'; return message; }
+            };
+            span.textContent = `[${timestamp}] ${typeClasses[type]?.() || message}\n`;
+            eventLog.appendChild(span);
+            eventLog.scrollTop = eventLog.scrollHeight;
         }
         
         function drawCircle(x, y, color, size = 30) {
-            try {
-                ctx.fillStyle = color;
-                ctx.globalAlpha = 0.7;
-                ctx.beginPath();
-                ctx.arc(x, y, size, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1.0;
-            } catch (error) {
-                logEvent(`ERROR: Failed to draw circle - ${error.message}`);
-            }
+            ctx.fillStyle = color;
+            ctx.globalAlpha = DRAWING_CONSTANTS.CIRCLE_ALPHA;
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, DRAWING_CONSTANTS.FULL_CIRCLE_RADIANS);
+            ctx.fill();
+            ctx.globalAlpha = DRAWING_CONSTANTS.FULL_ALPHA;
         }
         
         function clearCanvas() {
-            try {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            } catch (error) {
-                logEvent(`ERROR: Failed to clear canvas - ${error.message}`);
-            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
+        
         function clearLog() {
-            try {
-                eventLog.textContent = '';
-            } catch (error) {
-                logEvent(`ERROR: Failed to clear log - ${error.message}`);
-            }
+            eventLog.textContent = '';
         }
 
-        // Attach button event listeners
         document.getElementById('clearCanvasBtn').addEventListener('click', clearCanvas);
         document.getElementById('clearLogBtn').addEventListener('click', clearLog);
+        
+        function registerEvent(eventType, eventName, handler, options = {}) {
+            canvas.addEventListener(eventName, (e) => {
+                if (!isEventTypeEnabled(eventType)) return;
+                handler(e);
+            }, options);
+        }
+        
+        function createLogHandler(logMessage, isRedundant = false) {
+            return (e) => {
+                logEvent(logMessage(e), isRedundant ? 'redundant' : 'normal');
+            };
+        }
 
-        // Redundancy guide modal
         const guideModal = document.getElementById('guideModal');
         const showGuideBtn = document.getElementById('showGuideBtn');
         const closeGuideBtn = document.getElementById('closeGuide');
         let previouslyFocusedElement = null;
 
-        function openModal() {
+        const openModal = () => {
             previouslyFocusedElement = document.activeElement;
             guideModal.classList.add('show');
             closeGuideBtn.focus();
-        }
+        };
 
-        function closeModal() {
+        const closeModal = () => {
             guideModal.classList.remove('show');
-            if (previouslyFocusedElement) {
-                previouslyFocusedElement.focus();
-            }
-        }
+            previouslyFocusedElement?.focus();
+        };
 
         showGuideBtn.addEventListener('click', openModal);
         closeGuideBtn.addEventListener('click', closeModal);
+        guideModal.addEventListener('click', (e) => e.target === guideModal && closeModal());
 
-        guideModal.addEventListener('click', (e) => {
-            if (e.target === guideModal) {
-                closeModal();
-            }
+        registerEvent('mouse', 'mousedown', (e) => {
+            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.DOWN);
+            logEvent(`MOUSE: mousedown at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
-
-        // 1. MOUSE EVENTS (Legacy - Redundant with Pointer Events on modern browsers)
-        canvas.addEventListener('mousedown', (e) => {
-            if (!isEventTypeEnabled('mouse')) return;
-            drawCircle(e.clientX, e.clientY, colors.mouse, CIRCLE_SIZES.MOUSE_DOWN);
-            logEvent(`MOUSE: mousedown at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`, 'redundant');
+        
+        registerEvent('mouse', 'mouseup', (e) => {
+            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.UP);
+            logEvent(`MOUSE: mouseup at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
-
-        canvas.addEventListener('mouseup', (e) => {
-            if (!isEventTypeEnabled('mouse')) return;
-            logEvent(`MOUSE: mouseup at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`, 'redundant');
-        });
-
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isEventTypeEnabled('mouse')) return;
+        
+        registerEvent('mouse', 'mousemove', (e) => {
             if (e.buttons > 0) {
-                drawCircle(e.clientX, e.clientY, colors.mouse, CIRCLE_SIZES.MOUSE_MOVE);
-                logEvent(`MOUSE: mousemove at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`, 'redundant');
+                drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.MOVE);
+                logEvent(`MOUSE: mousemove at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
             }
         });
-
-        canvas.addEventListener('mouseover', (e) => {
-            if (!isEventTypeEnabled('mouse')) return;
-            logEvent(`MOUSE: mouseover (bubbles, fires on child elements)`, 'redundant');
-        });
-
-        canvas.addEventListener('mouseout', (e) => {
-            if (!isEventTypeEnabled('mouse')) return;
-            logEvent(`MOUSE: mouseout (bubbles, fires on child elements)`, 'redundant');
-        });
-
-        canvas.addEventListener('mouseenter', (e) => {
-            if (!isEventTypeEnabled('mouse')) return;
-            logEvent(`MOUSE: mouseenter (no bubble, only fires once on element)`, 'redundant');
-        });
-
-        canvas.addEventListener('mouseleave', (e) => {
-            if (!isEventTypeEnabled('mouse')) return;
-            logEvent(`MOUSE: mouseleave (no bubble, only fires once on element)`, 'redundant');
-        });
-
-        canvas.addEventListener('wheel', (e) => {
+        
+        registerEvent('mouse', 'mouseover', createLogHandler(
+            () => 'MOUSE: mouseover (bubbles, fires on child elements)', true));
+        
+        registerEvent('mouse', 'mouseout', createLogHandler(
+            () => 'MOUSE: mouseout (bubbles, fires on child elements)', true));
+        
+        registerEvent('mouse', 'mouseenter', createLogHandler(
+            () => 'MOUSE: mouseenter (no bubble, only fires once on element)', true));
+        
+        registerEvent('mouse', 'mouseleave', createLogHandler(
+            () => 'MOUSE: mouseleave (no bubble, only fires once on element)', true));
+        
+        registerEvent('mouse', 'wheel', (e) => {
             e.preventDefault();
-            if (!isEventTypeEnabled('mouse')) return;
-            drawCircle(e.clientX, e.clientY, colors.mouse, CIRCLE_SIZES.MOUSE_WHEEL);
+            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.WHEEL);
             const direction = e.deltaY > 0 ? 'down' : 'up';
-            logEvent(`MOUSE: wheel ${direction} (deltaY: ${e.deltaY.toFixed(1)}) at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`);
+            logEvent(`MOUSE: wheel ${direction} (deltaY: ${e.deltaY.toFixed(1)}) at ${formatCoords(e.clientX, e.clientY)}`);
         }, { passive: false });
         
-        // 2. TOUCH EVENTS (Legacy - Redundant with Pointer Events on modern browsers)
-        canvas.addEventListener('touchstart', (e) => {
+        const handleTouch = (e, eventName, type) => {
             e.preventDefault();
-            if (!isEventTypeEnabled('touch')) return;
-            for (let touch of e.touches) {
-                drawCircle(touch.clientX, touch.clientY, colors.touch, CIRCLE_SIZES.TOUCH_DOWN);
-                logEvent(`TOUCH: touchstart at (${touch.clientX.toFixed(1)}, ${touch.clientY.toFixed(1)})`, 'redundant');
+            if (e.touches?.length > 0) {
+                for (const touch of e.touches) {
+                    drawCircle(touch.clientX, touch.clientY, colors.touch, TYPE_SIZES[type]);
+                    logEvent(`TOUCH: ${eventName} at ${formatCoords(touch.clientX, touch.clientY)}`, 'redundant');
+                }
             }
-        }, { passive: false });
-
-        canvas.addEventListener('touchmove', (e) => {
+        };
+        
+        registerEvent('touch', 'touchstart', (e) => handleTouch(e, 'touchstart', 'DOWN'), { passive: false });
+        registerEvent('touch', 'touchmove', (e) => handleTouch(e, 'touchmove', 'MOVE'), { passive: false });
+        registerEvent('touch', 'touchend', (e) => {
             e.preventDefault();
-            if (!isEventTypeEnabled('touch')) return;
-            for (let touch of e.touches) {
-                drawCircle(touch.clientX, touch.clientY, colors.touch, CIRCLE_SIZES.TOUCH_MOVE);
-                logEvent(`TOUCH: touchmove at (${touch.clientX.toFixed(1)}, ${touch.clientY.toFixed(1)})`, 'redundant');
+            if (e.changedTouches?.length > 0) {
+                for (const touch of e.changedTouches) {
+                    drawCircle(touch.clientX, touch.clientY, colors.touch, TYPE_SIZES.UP);
+                    logEvent(`TOUCH: touchend at ${formatCoords(touch.clientX, touch.clientY)}`, 'redundant');
+                }
             }
-        }, { passive: false });
-
-        canvas.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            if (!isEventTypeEnabled('touch')) return;
-            logEvent(`TOUCH: touchend - ${e.changedTouches.length} touch(es) ended`, 'redundant');
         }, { passive: false });
         
-        // 3. POINTER EVENTS (Modern unified API - replaces both mouse and touch)
-        canvas.addEventListener('pointerdown', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            drawCircle(e.clientX, e.clientY, colors.pointer, CIRCLE_SIZES.POINTER_DOWN);
-            logEvent(`POINTER: pointerdown (${e.pointerType}) at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`);
+        const getPointerInfo = (e) => `(${e.pointerType}) at ${formatCoords(e.clientX, e.clientY)}`;
+        
+        registerEvent('pointer', 'pointerdown', (e) => {
+            drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.DOWN);
+            logEvent(`POINTER: pointerdown ${getPointerInfo(e)}`);
         });
-
-        canvas.addEventListener('pointerup', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: pointerup (${e.pointerType}) at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`);
+        
+        registerEvent('pointer', 'pointerup', (e) => {
+            drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.UP);
+            logEvent(`POINTER: pointerup ${getPointerInfo(e)}`);
         });
-
-        canvas.addEventListener('pointermove', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
+        
+        registerEvent('pointer', 'pointermove', (e) => {
             if (e.buttons > 0) {
-                drawCircle(e.clientX, e.clientY, colors.pointer, CIRCLE_SIZES.POINTER_MOVE);
-                logEvent(`POINTER: pointermove (${e.pointerType}) at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`);
+                drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.MOVE);
+                logEvent(`POINTER: pointermove ${getPointerInfo(e)}`);
             }
         });
-
-        canvas.addEventListener('pointerover', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: pointerover (${e.pointerType}) - bubbles, fires on child elements`);
-        });
-
-        canvas.addEventListener('pointerout', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: pointerout (${e.pointerType}) - bubbles, fires on child elements`);
-        });
-
-        canvas.addEventListener('pointerenter', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: pointerenter (${e.pointerType}) - no bubble, fires once on element`);
-        });
-
-        canvas.addEventListener('pointerleave', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: pointerleave (${e.pointerType}) - no bubble, fires once on element`);
-        });
-
-        canvas.addEventListener('pointercancel', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: pointercancel (${e.pointerType}) - pointer interaction cancelled by browser`);
-        });
-
-        canvas.addEventListener('gotpointercapture', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: gotpointercapture (${e.pointerType}) - pointer captured for exclusive events`);
-        });
-
-        canvas.addEventListener('lostpointercapture', (e) => {
-            if (!isEventTypeEnabled('pointer')) return;
-            logEvent(`POINTER: lostpointercapture (${e.pointerType}) - pointer capture released`);
+        
+        registerEvent('pointer', 'pointerover', createLogHandler(
+            (e) => `POINTER: pointerover (${e.pointerType}) - bubbles, fires on child elements`));
+        
+        registerEvent('pointer', 'pointerout', createLogHandler(
+            (e) => `POINTER: pointerout (${e.pointerType}) - bubbles, fires on child elements`));
+        
+        registerEvent('pointer', 'pointerenter', createLogHandler(
+            (e) => `POINTER: pointerenter (${e.pointerType}) - no bubble, fires once on element`));
+        
+        registerEvent('pointer', 'pointerleave', createLogHandler(
+            (e) => `POINTER: pointerleave (${e.pointerType}) - no bubble, fires once on element`));
+        
+        registerEvent('pointer', 'pointercancel', createLogHandler(
+            (e) => `POINTER: pointercancel (${e.pointerType}) - pointer interaction cancelled by browser`));
+        
+        registerEvent('pointer', 'gotpointercapture', createLogHandler(
+            (e) => `POINTER: gotpointercapture (${e.pointerType}) - pointer captured for exclusive events`));
+        
+        registerEvent('pointer', 'lostpointercapture', createLogHandler(
+            (e) => `POINTER: lostpointercapture (${e.pointerType}) - pointer capture released`));
+        
+        registerEvent('click', 'click', (e) => {
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.CLICK);
+            logEvent(`CLICK: click at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
         
-        // 4. CLICK EVENTS (Composite events - fire AFTER down+up sequence)
-        canvas.addEventListener('click', (e) => {
-            if (!isEventTypeEnabled('click')) return;
-            drawCircle(e.clientX, e.clientY, colors.click, CIRCLE_SIZES.CLICK);
-            logEvent(`CLICK: click at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`, 'redundant');
-        });
-
-        canvas.addEventListener('auxclick', (e) => {
-            if (!isEventTypeEnabled('click')) return;
-            drawCircle(e.clientX, e.clientY, colors.click, CIRCLE_SIZES.AUX_CLICK);
-            logEvent(`CLICK: auxclick (button ${e.button}: middle/side button) at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`, 'redundant');
-        });
-
-        canvas.addEventListener('dblclick', (e) => {
-            if (!isEventTypeEnabled('click')) return;
-            drawCircle(e.clientX, e.clientY, colors.click, CIRCLE_SIZES.DOUBLE_CLICK);
-            logEvent(`CLICK: dblclick at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`, 'redundant');
-        });
-
-        canvas.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            if (!isEventTypeEnabled('click')) return;
-            drawCircle(e.clientX, e.clientY, colors.click, CIRCLE_SIZES.CONTEXT_MENU);
-            logEvent(`CLICK: contextmenu (right-click) at (${e.clientX.toFixed(1)}, ${e.clientY.toFixed(1)})`, 'redundant');
+        registerEvent('click', 'auxclick', (e) => {
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.AUX_CLICK);
+            logEvent(`CLICK: auxclick (button ${e.button}: middle/side button) at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
         
-        // 5. GESTURE EVENTS (Safari/iOS specific - Non-standard, redundant with touch-based detection)
-        canvas.addEventListener('gesturestart', (e) => {
+        registerEvent('click', 'dblclick', (e) => {
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.DOUBLE_CLICK);
+            logEvent(`CLICK: dblclick at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
+        });
+        
+        registerEvent('click', 'contextmenu', (e) => {
             e.preventDefault();
-            if (!isEventTypeEnabled('gesture')) return;
-            drawCircle(e.clientX || canvas.width / 2, e.clientY || canvas.height / 2, colors.gesture, CIRCLE_SIZES.GESTURE);
-            logEvent(`GESTURE: gesturestart (Safari only)`, 'redundant');
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.CONTEXT_MENU);
+            logEvent(`CLICK: contextmenu (right-click) at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         }, { passive: false });
-
-        canvas.addEventListener('gesturechange', (e) => {
+        
+        registerEvent('gesture', 'gesturestart', (e) => {
             e.preventDefault();
-            if (!isEventTypeEnabled('gesture')) return;
+            const x = e.clientX ?? canvas.width / 2;
+            const y = e.clientY ?? canvas.height / 2;
+            drawCircle(x, y, colors.gesture, TYPE_SIZES.GESTURE);
+            logEvent('GESTURE: gesturestart (Safari only)', 'redundant');
+        }, { passive: false });
+        
+        registerEvent('gesture', 'gesturechange', (e) => {
+            e.preventDefault();
             const scale = e.scale !== undefined ? e.scale.toFixed(1) : 'N/A';
             const rotation = e.rotation !== undefined ? e.rotation.toFixed(1) : 'N/A';
             logEvent(`GESTURE: gesturechange (Safari only) - scale: ${scale}, rotation: ${rotation}`, 'redundant');
         }, { passive: false });
-
-        canvas.addEventListener('gestureend', (e) => {
+        
+        registerEvent('gesture', 'gestureend', (e) => {
             e.preventDefault();
-            if (!isEventTypeEnabled('gesture')) return;
-            logEvent(`GESTURE: gestureend (Safari only)`, 'redundant');
+            logEvent('GESTURE: gestureend (Safari only)', 'redundant');
         }, { passive: false });
 
-        // 6. CROSS-BROWSER GESTURE DETECTION (using Touch Events)
-        let gestureStartDistance = 0;
-        let gestureStartAngle = 0;
+        registerEvent('touch', 'touchcancel', createLogHandler(
+            () => 'TOUCH: touchcancel - touch interrupted', true));
 
-        function getDistance(touch1, touch2) {
-            const dx = touch2.clientX - touch1.clientX;
-            const dy = touch2.clientY - touch1.clientY;
-            return Math.sqrt(dx * dx + dy * dy);
-        }
-
-        function getAngle(touch1, touch2) {
-            const dx = touch2.clientX - touch1.clientX;
-            const dy = touch2.clientY - touch1.clientY;
-            return Math.atan2(dy, dx) * 180 / Math.PI;
-        }
-
-        canvas.addEventListener('touchstart', (e) => {
-            if (!isEventTypeEnabled('gesture')) return;
-            if (e.touches.length === 2) {
-                try {
-                    gestureStartDistance = getDistance(e.touches[0], e.touches[1]);
-                    gestureStartAngle = getAngle(e.touches[0], e.touches[1]);
-                    const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-                    const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                    drawCircle(centerX, centerY, colors.gesture, CIRCLE_SIZES.GESTURE);
-                    logEvent(`GESTURE: Two-finger gesture start (cross-browser)`, 'redundant');
-                } catch (error) {
-                    logEvent(`ERROR: Gesture start failed - ${error.message}`);
-                }
-            }
-        });
-
-        canvas.addEventListener('touchmove', (e) => {
-            if (!isEventTypeEnabled('gesture')) return;
-            if (e.touches.length === 2 && gestureStartDistance > 0) {
-                try {
-                    const currentDistance = getDistance(e.touches[0], e.touches[1]);
-                    const currentAngle = getAngle(e.touches[0], e.touches[1]);
-                    const scale = currentDistance / gestureStartDistance;
-                    const rotation = currentAngle - gestureStartAngle;
-
-                    logEvent(`GESTURE: Pinch/Rotate (cross-browser) - scale: ${scale.toFixed(1)}, rotation: ${rotation.toFixed(1)}°`, 'redundant');
-                } catch (error) {
-                    logEvent(`ERROR: Gesture move failed - ${error.message}`);
-                }
-            }
-        });
-
-        canvas.addEventListener('touchend', (e) => {
-            if (!isEventTypeEnabled('gesture')) return;
-            if (e.touches.length < 2) {
-                if (gestureStartDistance > 0) {
-                    try {
-                        logEvent(`GESTURE: Two-finger gesture end (cross-browser)`, 'redundant');
-                    } catch (error) {
-                        logEvent(`ERROR: Gesture end failed - ${error.message}`);
-                    }
-                }
-                gestureStartDistance = 0;
-                gestureStartAngle = 0;
-            }
-        });
-
-        // Additional event detection methods
-
-        // 7. touchcancel event
-        canvas.addEventListener('touchcancel', (e) => {
-            if (!isEventTypeEnabled('touch')) return;
-            logEvent(`TOUCH: touchcancel - touch interrupted`, 'redundant');
-        });
-
-        // 8. Using matchMedia to detect touch capability
         const hasTouchScreen = window.matchMedia('(pointer: coarse)').matches;
         logEvent(`Device has touch screen: ${hasTouchScreen}`);
 
-        // 9. Using navigator to detect touch support
         const touchSupported = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         logEvent(`Touch events supported: ${touchSupported}`);
         logEvent(`Max touch points: ${navigator.maxTouchPoints || 0}`);
-
-        logEvent('');
-        logEvent('Event detection demo loaded. Interact with the canvas!');
-        logEvent('Click "Redundancy Guide" button to understand which events are redundant.');
     </script>
 </body>
 </html>
