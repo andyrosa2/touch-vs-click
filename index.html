@@ -119,6 +119,21 @@
             font-weight: bold;
         }
         #closeGuide:hover { background: lime; }
+
+        #keyboardInputContainer {
+            margin-top: 15px;
+        }
+        #keyboardInputContainer label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        #keyboardInput {
+            width: 100%;
+            padding: 8px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
     </style>
 </head>
 <body>
@@ -136,6 +151,10 @@
         <button type="button" id="clearCanvasBtn">Clear Canvas</button>
         <button type="button" id="clearLogBtn">Clear Log</button>
         <button type="button" id="showGuideBtn">Redundancy Guide</button>
+        <div id="keyboardInputContainer">
+            <label for="keyboardInput">Test Keyboard:</label>
+            <input type="text" id="keyboardInput" placeholder="Tap to show keyboard">
+        </div>
     </div>
 
     <pre id="eventLog"></pre>
