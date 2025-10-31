@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pointer Events Test</title>
+    <style>
+        body { margin: 0; height: 100vh; display: flex; flex-direction: column; }
+        #target { height: 200px; background: #ccc; touch-action: none; -webkit-user-select: none; user-select: none; }
+        #container { flex: 1; display: flex; overflow: hidden; }
+        .side { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .counts { height: 200px; overflow-y: scroll; }
+        .log { flex: 1; overflow-y: scroll; }
+    </style>
+</head>
+<body>
+    <div id="target">TOUCH HERE</div>
+    <div id="container">
+        <div class="side">
+            <pre class="counts" id="pointerCounts"></pre>
+            <pre class="log" id="pointerLog"></pre>
+        </div>
+        <div class="side">
+            <pre class="counts" id="touchCounts"></pre>
+            <pre class="log" id="touchLog"></pre>
+        </div>
+    </div>
+    
+    <script>
+        const target = document.getElementById('target');
+        const pointerLog = document.getElementById('pointerLog');
+        const pointerCounts = document.getElementById('pointerCounts');
+        const touchLog = document.getElementById('touchLog');
+        const touchCounts = document.getElementById('touchCounts');
+        
+        const EVENT_HORIZON_MS = 3000;
+        const pointerTimestamps = {};
+        const touchTimestamps = {};
+        
+        function createLogger(logElement, moveEventPrefix) {
+            let lastLogLine = '';
+            let moveCount = 0;
+            
+            return function(msg) {
+                if (msg.startsWith(moveEventPrefix)) {
+                    if (lastLogLine.startsWith(moveEventPrefix)) {
+                        moveCount++;
+                        const lines = logElement.textContent.split('\n');
+                        lines[0] = msg + ` (x${moveCount})`;
+                        logElement.textContent = lines.join('\n');
+                    } else {
+                        moveCount = 1;
+                        logElement.textContent = msg + '\n' + logElement.textContent;
+                    }
+                    lastLogLine = msg;
+                } else {
+                    moveCount = 0;
+                    lastLogLine = msg;
+                    logElement.textContent = msg + '\n' + logElement.textContent;
+                }
+            };
+        }
+        
+        const logPointerEvent = createLogger(pointerLog, 'pointermove:');
+        const logTouchEvent = createLogger(touchLog, 'touchmove:');
+        
+        function updateCountsForType(eventNames, timestamps, outputElement, title) {
+            const now = Date.now();
+            let output = `${title} in last ${EVENT_HORIZON_MS}ms:\n`;
+            
+            eventNames.forEach(eventName => {
+                if (!timestamps[eventName]) {
+                    timestamps[eventName] = [];
+                }
+                timestamps[eventName] = timestamps[eventName].filter(t => now - t < EVENT_HORIZON_MS);
+                output += `${eventName}: ${timestamps[eventName].length}\n`;
+            });
+            
+            outputElement.textContent = output;
+        }
+        
+        function updateCounts() {
+            updateCountsForType(pointerEvents, pointerTimestamps, pointerCounts, 'Pointer events');
+            updateCountsForType(touchEvents, touchTimestamps, touchCounts, 'Touch events');
+        }
+        
+        const pointerEvents = [
+            'pointerover',
+            'pointerenter',
+            'pointerdown',
+            'pointermove',
+            'pointerup',
+            'pointercancel',
+            'pointerout',
+            'pointerleave',
+            'gotpointercapture',
+            'lostpointercapture'
+        ];
+        
+        const touchEvents = [
+            'touchstart',
+            'touchmove',
+            'touchend',
+            'touchcancel'
+        ];
+        
+        function registerEvents(eventNames, timestamps, logger, formatEvent, options = {}) {
+            eventNames.forEach(eventName => {
+                timestamps[eventName] = [];
+                target.addEventListener(eventName, (e) => {
+                    if (options.preventDefault) e.preventDefault();
+                    timestamps[eventName].push(Date.now());
+                    logger(formatEvent(eventName, e));
+                }, options);
+            });
+        }
+        
+        registerEvents(
+            pointerEvents,
+            pointerTimestamps,
+            logPointerEvent,
+            (name, e) => `${name}: id=${e.pointerId} type=${e.pointerType} x=${e.clientX} y=${e.clientY}`,
+            { preventDefault: true }
+        );
+        
+        registerEvents(
+            touchEvents,
+            touchTimestamps,
+            logTouchEvent,
+            (name, e) => {
+                const touch = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || {};
+                return `${name}: id=${touch.identifier} x=${touch.clientX} y=${touch.clientY}`;
+            },
+            { passive: true }
+        );
+        
+        target.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        }, true);
+        
+        setInterval(updateCounts, 100);
+    </script>
+</body>
+</html>

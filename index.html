@@ -35,7 +35,7 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font: Arial, sans-serif; background: #000; color: #fff; overflow: hidden; }
-        #canvas { position: fixed; inset: 0; }
+        #canvas { position: fixed; inset: 0; touch-action: none; }
         
         #info, #eventLog {
             position: fixed;
@@ -260,7 +260,7 @@
         if (!eventLog) throw new Error('Event log element not found');
 
         const eventTypeEnabled = {
-            mouse: true,
+            mouse: false,
             touch: true,
             pointer: true,
             click: true,
@@ -268,8 +268,11 @@
         };
 
         document.querySelectorAll('.event-type').forEach(label => {
+            const eventType = label.getAttribute('data-event-type');
+            if (eventType && !eventTypeEnabled[eventType]) {
+                label.classList.add('disabled');
+            }
             label.addEventListener('click', () => {
-                const eventType = label.getAttribute('data-event-type');
                 if (eventType) {
                     eventTypeEnabled[eventType] = !eventTypeEnabled[eventType];
                     label.classList.toggle('disabled', !eventTypeEnabled[eventType]);
@@ -311,9 +314,18 @@
         };
 
         const DRAWING_CONSTANTS = {
-            CIRCLE_ALPHA: 0.7,
+            CIRCLE_ALPHA: 0.4,
             FULL_ALPHA: 1.0,
             FULL_CIRCLE_RADIANS: Math.PI * 2
+        };
+        
+        const OFFSET = 5;
+        const OFFSET_BY_TYPE = {
+            mouse: { x: -OFFSET, y: -OFFSET },
+            touch: { x: OFFSET, y: OFFSET },
+            pointer: { x: 0, y: 0 },
+            click: { x: -OFFSET, y: 0 },
+            gesture: { x: 0, y: -OFFSET }
         };
         
         const formatCoords = (x, y) => `(${x.toFixed(1)}, ${y.toFixed(1)})`;
@@ -331,11 +343,12 @@
             eventLog.scrollTop = eventLog.scrollHeight;
         }
         
-        function drawCircle(x, y, color, size = 30) {
+        function drawCircle(x, y, color, size = 30, eventType = 'pointer') {
+            const offset = OFFSET_BY_TYPE[eventType] || { x: 0, y: 0 };
             ctx.fillStyle = color;
             ctx.globalAlpha = DRAWING_CONSTANTS.CIRCLE_ALPHA;
             ctx.beginPath();
-            ctx.arc(x, y, size, 0, DRAWING_CONSTANTS.FULL_CIRCLE_RADIANS);
+            ctx.arc(x + offset.x, y + offset.y, size, 0, DRAWING_CONSTANTS.FULL_CIRCLE_RADIANS);
             ctx.fill();
             ctx.globalAlpha = DRAWING_CONSTANTS.FULL_ALPHA;
         }
@@ -385,18 +398,18 @@
         guideModal.addEventListener('click', (e) => e.target === guideModal && closeModal());
 
         registerEvent('mouse', 'mousedown', (e) => {
-            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.DOWN);
+            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.DOWN, 'mouse');
             logEvent(`MOUSE: mousedown at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
         
         registerEvent('mouse', 'mouseup', (e) => {
-            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.UP);
+            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.UP, 'mouse');
             logEvent(`MOUSE: mouseup at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
         
         registerEvent('mouse', 'mousemove', (e) => {
             if (e.buttons > 0) {
-                drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.MOVE);
+                drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.MOVE, 'mouse');
                 logEvent(`MOUSE: mousemove at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
             }
         });
@@ -415,54 +428,46 @@
         
         registerEvent('mouse', 'wheel', (e) => {
             e.preventDefault();
-            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.WHEEL);
+            drawCircle(e.clientX, e.clientY, colors.mouse, TYPE_SIZES.WHEEL, 'mouse');
             const direction = e.deltaY > 0 ? 'down' : 'up';
             logEvent(`MOUSE: wheel ${direction} (deltaY: ${e.deltaY.toFixed(1)}) at ${formatCoords(e.clientX, e.clientY)}`);
         }, { passive: false });
         
         const handleTouch = (e, eventName, type) => {
-            e.preventDefault();
             if (e.touches?.length > 0) {
                 for (const touch of e.touches) {
-                    drawCircle(touch.clientX, touch.clientY, colors.touch, TYPE_SIZES[type]);
+                    drawCircle(touch.clientX, touch.clientY, colors.touch, TYPE_SIZES[type], 'touch');
                     logEvent(`TOUCH: ${eventName} at ${formatCoords(touch.clientX, touch.clientY)}`, 'redundant');
                 }
             }
         };
         
-        registerEvent('touch', 'touchstart', (e) => handleTouch(e, 'touchstart', 'DOWN'), { passive: false });
-        registerEvent('touch', 'touchmove', (e) => handleTouch(e, 'touchmove', 'MOVE'), { passive: false });
+        registerEvent('touch', 'touchstart', (e) => handleTouch(e, 'touchstart', 'DOWN'), { passive: true });
+        registerEvent('touch', 'touchmove', (e) => handleTouch(e, 'touchmove', 'MOVE'), { passive: true });
         registerEvent('touch', 'touchend', (e) => {
-            e.preventDefault();
             if (e.changedTouches?.length > 0) {
                 for (const touch of e.changedTouches) {
-                    drawCircle(touch.clientX, touch.clientY, colors.touch, TYPE_SIZES.UP);
+                    drawCircle(touch.clientX, touch.clientY, colors.touch, TYPE_SIZES.UP, 'touch');
                     logEvent(`TOUCH: touchend at ${formatCoords(touch.clientX, touch.clientY)}`, 'redundant');
                 }
             }
-        }, { passive: false });
+        }, { passive: true });
         
         const getPointerInfo = (e) => `(${e.pointerType}) at ${formatCoords(e.clientX, e.clientY)}`;
         
-        const activePointers = new Set();
-        
         registerEvent('pointer', 'pointerdown', (e) => {
-            activePointers.add(e.pointerId);
-            drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.DOWN);
+            drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.DOWN, 'pointer');
             logEvent(`POINTER: pointerdown ${getPointerInfo(e)}`);
         });
         
         registerEvent('pointer', 'pointerup', (e) => {
-            activePointers.delete(e.pointerId);
-            drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.UP);
+            drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.UP, 'pointer');
             logEvent(`POINTER: pointerup ${getPointerInfo(e)}`);
         });
         
         registerEvent('pointer', 'pointermove', (e) => {
-            if (activePointers.has(e.pointerId)) {
-                drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.MOVE);
-                logEvent(`POINTER: pointermove ${getPointerInfo(e)}`);
-            }
+            drawCircle(e.clientX, e.clientY, colors.pointer, TYPE_SIZES.MOVE, 'pointer');
+            logEvent(`POINTER: pointermove ${getPointerInfo(e)}`);
         });
         
         registerEvent('pointer', 'pointerover', createLogHandler(
@@ -487,23 +492,23 @@
             (e) => `POINTER: lostpointercapture (${e.pointerType}) - pointer capture released`));
         
         registerEvent('click', 'click', (e) => {
-            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.CLICK);
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.CLICK, 'click');
             logEvent(`CLICK: click at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
         
         registerEvent('click', 'auxclick', (e) => {
-            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.AUX_CLICK);
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.AUX_CLICK, 'click');
             logEvent(`CLICK: auxclick (button ${e.button}: middle/side button) at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
         
         registerEvent('click', 'dblclick', (e) => {
-            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.DOUBLE_CLICK);
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.DOUBLE_CLICK, 'click');
             logEvent(`CLICK: dblclick at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         });
         
         registerEvent('click', 'contextmenu', (e) => {
             e.preventDefault();
-            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.CONTEXT_MENU);
+            drawCircle(e.clientX, e.clientY, colors.click, TYPE_SIZES.CONTEXT_MENU, 'click');
             logEvent(`CLICK: contextmenu (right-click) at ${formatCoords(e.clientX, e.clientY)}`, 'redundant');
         }, { passive: false });
         
@@ -511,7 +516,7 @@
             e.preventDefault();
             const x = e.clientX ?? canvas.width / 2;
             const y = e.clientY ?? canvas.height / 2;
-            drawCircle(x, y, colors.gesture, TYPE_SIZES.GESTURE);
+            drawCircle(x, y, colors.gesture, TYPE_SIZES.GESTURE, 'gesture');
             logEvent('GESTURE: gesturestart (Safari only)', 'redundant');
         }, { passive: false });
         
